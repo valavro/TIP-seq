@@ -5,7 +5,7 @@
 ######:: Remove T7 duplicates -- based on read1 start position ::#######
 ####################################################################
 
-setwd("~/sciTIP_pool/beds_rmdup/")
+setwd("/maps/projects/dan1/people/cjm933/TIP_scripts/Data/beds_rmdup")
 
 system("find . -type f -size 0 -delete") ## remove cells with 0 bytes to avoid error below   
 allBEDs=list.files(pattern=".bed")
