@@ -3,8 +3,8 @@
 ####################################
 # Authored by Daniel Bartlett and Vishnu Dileep
 
-options(mc.cores=20) ## <- set number of computing cores to use
-setwd("~/sciTIP_pool/") ## <- set to directory containing pool.fastq files and barcode files.
+options(mc.cores=8) ## <- set number of computing cores to use
+setwd("~/datadir/TIP_scripts/") ## <- set to directory containing pool.fastq files and barcode files.
 
 ####:: In preparation for deindexing ::#########
 
@@ -20,20 +20,33 @@ setwd("~/sciTIP_pool/") ## <- set to directory containing pool.fastq files and b
 #       (more info at https://support.illumina.com/content/dam/illumina-support/documents/documentation/system_documentation/miseq/indexed-sequencing-overview-guide-15057455-08.pdf)
 
 # 2. check that I2 index is 29 bp long and is appended to R1/R2 fastq read headers
-system("head -c 2000 Undetermined_S0_L001_R1_001.fastq.gz | zcat 2>/dev/null | head -10")    # head gzipped file.
+system("head -c 2000 ./Data/Raw_data/TFS6_IgG20k_S1_R2_001.fastq.gz | zcat 2>/dev/null | head -10")    # head gzipped file.
 
 # 3. concatenate Lane1 and Lane2 files 
-system("for i in *L001*; do cat $i ${i/L001/L002} > ${i/_L001/}; done")
+#system("for i in *L001*; do cat $i ${i/L001/L002} > ${i/_L001/}; done")
 
 # 4. rename files # note: cat command above unzipped files so remove .gz from names
-system("mv Undetermined_S0_I1_001.fastq.gz sciTIP_pool_I1_001.fastq")
-system("mv Undetermined_S0_R1_001.fastq.gz sciTIP_pool_R1_001.fastq")
-system("mv Undetermined_S0_R2_001.fastq.gz sciTIP_pool_I2_001.fastq") ## Index2 = *_R2.fastq file in this novaseq bcl2fastq scheme
-system("mv Undetermined_S0_R3_001.fastq.gz sciTIP_pool_R2_001.fastq") ## Read2 = *_R3.fastq file in this novaseq bcl2fastq scheme
+
+input_path="./Data/Raw_data"
+output_file="./Data/sciTIP_pool_R2_001.fastq"
+#output_file="./Data/test_I1.txt"
+
+bash_command <- paste0("for i in ", shQuote(file.path(input_path, "*_R3_*.fastq.gz")), "; do zcat $i >> ", shQuote(output_file), "; done")
+system(bash_command, intern = TRUE)
+
+
+#system("zcat ./Data/Raw_data/TFS6_IgG20k_S1_I1_001.fastq.gz > ./Data/sciTIP_pool_I1_001.fastq")
+#system("zcat ./Data/Raw_data/TFS6_IgG20k_S1_R1_001.fastq.gz > ./Data/sciTIP_pool_R1_001.fastq")
+#system("zcat ./Data/Raw_data/TFS6_IgG20k_S1_R2_001.fastq.gz > ./Data/sciTIP_pool_I2_001.fastq") ## Index2 = *_R2.fastq file in this novaseq bcl2fastq scheme
+#system("zcat ./Data/Raw_data/TFS6_IgG20k_S1_R3_001.fastq.gz > ./Data/sciTIP_pool_R2_001.fastq") ## Read2 = *_R3.fastq file in this novaseq bcl2fastq scheme
+
+setwd("~/datadir/TIP_scripts/Data")
 
 # 5. split up fastq files into 50M read chunks (better memory usage)
-system("split -l 200000000 sciTIP_pool_R1_001.fastq sciTIP_pool_R1_001.fastq.split.") # splits fastq into 50M read chunks (to limit memory usage)
-system("split -l 200000000 sciTIP_pool_R2_001.fastq sciTIP_pool_R2_001.fastq.split.") # splits fastq into 50M read chunks (to limit memory usage)
+system("split -l 20000000 sciTIP_pool_R1_001.fastq sciTIP_pool_R1_001.fastq.split.") # splits fastq into 50M read chunks (to limit memory usage)
+system("split -l 20000000 sciTIP_pool_R2_001.fastq sciTIP_pool_R2_001.fastq.split.") # splits fastq into 50M read chunks (to limit memory usage)
+system("split -l 20000000 sciTIP_pool_I1_001.fastq sciTIP_pool_I1_001.fastq.split.") # splits fastq into 50M read chunks (to limit memory usage)
+system("split -l 20000000 sciTIP_pool_I2_001.fastq sciTIP_pool_I2_001.fastq.split.") # splits fastq into 50M read chunks (to limit memory usage)
 
 library(data.table)
 library(Biostrings)
@@ -43,6 +56,9 @@ library(tidyverse)
 ################################
 ###:: read barcode files ::#####
 ################################
+
+setwd("~/datadir/TIP_scripts")
+
 
 i7_index=read.delim("i7_barcodes.txt", header=T)
 i5_index=read.delim("i5_barcodes.revComp.txt", header=T)
@@ -73,8 +89,10 @@ all_combs=as.data.frame(all_combs)
 ####:: Iterate deindexing over all split R1/R2 fastq files ::######
 ###################################################################
 
+setwd("~/datadir/TIP_scripts/Data")
 chunk = unique(unlist(strsplit(list.files(pattern = ".fastq.split"), '_001.fastq.'))[c(FALSE,TRUE)]) # number of iterations (ie. split fastqs)
 length(chunk) # number of iterations (ie. split fastq files)
+chunk[1]
 
 system("mkdir deindexed_fastq")
 for(i in 1:length(chunk)){
@@ -84,13 +102,29 @@ for(i in 1:length(chunk)){
   F2=fread(paste0("sciTIP_pool_R2_001.fastq.",chunk[i]), header=FALSE,col.names = "L",sep="") 
   
   ###:: Extract i5 and r5 indexes from Index2 and recombine all indices i5+i7+r5  ::###  NOTE: If NOT using reverse complement chemistry, you will need to change these numbers... order will be reversed for i5/r5 index sequence.
-  l=nrow(F1)
-  rawIndex=F1$L[seq(1,l,4)]
+  #l=nrow(F1)
+  #rawIndex=F1$L[seq(1,l,4)]
+  #rawIndex=strsplit(rawIndex,split=":")
+  #i7s=unlist(lapply(rawIndex,'[[',10))
+  #r5i5=unlist(lapply(rawIndex,'[[',8))
+  #i5s=unlist(lapply(r5i5,substring,22,29))
+  #r5s=unlist(lapply(r5i5,substring,1,6))
+  
+  
+  
+  I2=fread(paste0("sciTIP_pool_I2_001.fastq.",chunk[i]), header=FALSE,col.names = "L",sep="")
+  l=nrow(I2)
+  i2seq=I2$L[seq(2,l,4)]  ## reads only sequence lines; 29 bp
+  i5s=unlist(lapply(i2seq,substring,22,29))
+  r5s=unlist(lapply(i2seq,substring,1,6))
+  # get the other index from the header
+  rawIndex=I2$L[seq(1,l,4)]
   rawIndex=strsplit(rawIndex,split=":")
-  i7s=unlist(lapply(rawIndex,'[[',11))
-  r5i5=unlist(lapply(rawIndex,'[[',8))
-  i5s=unlist(lapply(r5i5,substring,22,29))
-  r5s=unlist(lapply(r5i5,substring,1,6))
+  i7s=unlist(lapply(rawIndex,'[[',10))  ## 10 instead of 11 gets the index!
+  
+  
+  
+  
   
   #rm(rawIndex,r5i5)
   index_file=paste0(i5s,i7s,r5s)
@@ -150,7 +184,7 @@ for(i in 1:length(chunk)){
 ####:: combine split All_index_combinations.txt files ::####
 statfiles = lapply(list.files(pattern = "All_index_combinations.split"), function(x)read.table(x, header=T)) 
 stat=statfiles %>% reduce(full_join, by = c("names","combindex"))
-stat$Hits_sum=rowSums(stat[,3:ncol(stat)])
+stat$Hits_sum=rowSums(stat[,3:ncol(stat)], na.rm = TRUE)
 comb_stat=stat[,c('names','combindex','Hits_sum')]
 write.table(comb_stat,file = "stats_deindexing.txt",sep="\t",row.names=FALSE,quote = FALSE)
 system("rm All_index_combinations*")
@@ -164,13 +198,12 @@ for(i in 1:length(fqcomb)){
   system(cmd)
 }
 
-
 #####################
 ####:: cleanup ::#### 
 ### enable cleanup below when script completed successfully.
 
 
-#system("gzip ../*fastq") # gzip original pooled fastq files
+#system("gzip ../*.fastq") # gzip original pooled fastq files
 #system("rm ../*_001.fastq.split.*") # delete pooled split.fastq files
 #system("rm *.fastq.split.*") # delete deindexed split.fastq files
 
